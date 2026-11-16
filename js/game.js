@@ -8,7 +8,8 @@
     if (!T) throw new Error('no three');
     renderer = new T.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
   } catch (e) { $('err').style.display = 'flex'; $('menu').style.display = 'none'; return; }
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  var prMax = Math.min(window.devicePixelRatio || 1, 2, 2200 / Math.max(window.innerWidth, 1)), pr = prMax, fpsT = 0, fpsN = 0;
+  renderer.setPixelRatio(pr);
   renderer.outputEncoding = T.sRGBEncoding;
   renderer.toneMapping = T.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
@@ -236,7 +237,7 @@
     var barkMat = new T.MeshStandardMaterial({ map: A.bark, normalMap: A.barkN, roughness: 0.95, envMapIntensity: 0.3 });
     var leafMat = new T.MeshStandardMaterial({ map: A.leaf, alphaTest: 0.4, side: T.DoubleSide, roughness: 0.85, envMapIntensity: 0.3 });
     var leafDepth = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, map: A.leaf, alphaTest: 0.4 });
-    var CAP = 150, ZERO = new T.Matrix4().makeScale(0, 0, 0), sets = [], billMats = [];
+    var CAP = 90, ZERO = new T.Matrix4().makeScale(0, 0, 0), sets = [], billMats = [];
     var keepTM = renderer.toneMapping, keepCol = new T.Color(); renderer.getClearColor(keepCol); var keepA = renderer.getClearAlpha(); renderer.toneMapping = T.NoToneMapping;
     A.bins.forEach(function (buf, v) {
       var g = parse(buf); g.l.computeBoundingBox(); var bb = g.l.boundingBox, R = Math.max(bb.max.x, -bb.min.x, bb.max.z, -bb.min.z), H = bb.max.y;
@@ -264,7 +265,7 @@
         var cx = camera.position.x, cz = camera.position.z;
         sets.forEach(function (S) {
           var k = 0, ch = false;
-          for (var i = 0; i < S.list.length; i++) { var t = S.list[i], dx = t.x - cx, dz = t.z - cz, d2 = dx * dx + dz * dz, want = d2 < (t.near ? 30625 : 22500) && k < CAP;
+          for (var i = 0; i < S.list.length; i++) { var t = S.list[i], dx = t.x - cx, dz = t.z - cz, d2 = dx * dx + dz * dz, want = d2 < (t.near ? 14400 : 10000) && k < CAP;
             if (want) { S.nb.setMatrixAt(k, t.m); S.nl.setMatrixAt(k, t.m); k++; }
             if (want !== t.near) { S.bill.setMatrixAt(t.bi, want ? ZERO : t.m); t.near = want; ch = true; } }
           S.nb.count = S.nl.count = k; S.nb.instanceMatrix.needsUpdate = S.nl.instanceMatrix.needsUpdate = true; if (ch) S.bill.instanceMatrix.needsUpdate = true;
@@ -535,6 +536,9 @@
     sky.position.copy(camera.position);
     sun.position.set(car.x + sunDir.x * 220, gy + sunDir.y * 220, car.z + sunDir.z * 220); sun.target.position.set(car.x, gy, car.z);
     weatherUpdate(dt, now);
+    // keep the frame rate up on slower graphics cards by trading away some sharpness
+    fpsT += dt; fpsN++; if (fpsT > 2) { var fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
+      if (fps < 40 && pr > 0.65) { pr = Math.max(0.65, pr * 0.85); renderer.setPixelRatio(pr); resize(); } else if (fps > 57 && pr < prMax) { pr = Math.min(prMax, pr * 1.08); renderer.setPixelRatio(pr); resize(); } }
     lodT += dt; if (lodT > 0.25 && forest && forest.lod) { lodT = 0; forest.lod(); }
 
     hudT += dt;
