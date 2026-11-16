@@ -8,7 +8,7 @@
     if (!T) throw new Error('no three');
     renderer = new T.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
   } catch (e) { $('err').style.display = 'flex'; $('menu').style.display = 'none'; return; }
-  var prMax = Math.min(window.devicePixelRatio || 1, 2, 2200 / Math.max(window.innerWidth, 1)), pr = prMax, fpsT = 0, fpsN = 0;
+  var prMax = Math.min(window.devicePixelRatio || 1, 2, 2200 / Math.max(window.innerWidth, 1)), pr = prMax, prMin = Math.min(prMax, 1150 / Math.max(window.innerWidth, 1)), fpsT = 0, fpsN = 0;
   renderer.setPixelRatio(pr);
   renderer.outputEncoding = T.sRGBEncoding;
   renderer.toneMapping = T.ACESFilmicToneMapping;
@@ -205,7 +205,7 @@
   })();
 
   /* ---------- forest ---------- */
-  var treeGrid = {}, CELL = 16, trees = [], forest = null;
+  var treeGrid = {}, CELL = 16, trees = [], forest = null, nearR = 100, nearCap = 90;
   function nearTrack(x, z, min) { var m2 = min * min; for (var i = 0; i < coarse.length; i += 2) { var dx = coarse[i] - x, dz = coarse[i + 1] - z; if (dx * dx + dz * dz < m2) return true; } return false; }
   (function () {
     var k, x, z;
@@ -265,7 +265,7 @@
         var cx = camera.position.x, cz = camera.position.z;
         sets.forEach(function (S) {
           var k = 0, ch = false;
-          for (var i = 0; i < S.list.length; i++) { var t = S.list[i], dx = t.x - cx, dz = t.z - cz, d2 = dx * dx + dz * dz, want = d2 < (t.near ? 14400 : 10000) && k < CAP;
+          for (var i = 0; i < S.list.length; i++) { var t = S.list[i], dx = t.x - cx, dz = t.z - cz, d2 = dx * dx + dz * dz, want = d2 < (t.near ? (nearR + 20) * (nearR + 20) : nearR * nearR) && k < nearCap;
             if (want) { S.nb.setMatrixAt(k, t.m); S.nl.setMatrixAt(k, t.m); k++; }
             if (want !== t.near) { S.bill.setMatrixAt(t.bi, want ? ZERO : t.m); t.near = want; ch = true; } }
           S.nb.count = S.nl.count = k; S.nb.instanceMatrix.needsUpdate = S.nl.instanceMatrix.needsUpdate = true; if (ch) S.bill.instanceMatrix.needsUpdate = true;
@@ -537,8 +537,10 @@
     sun.position.set(car.x + sunDir.x * 220, gy + sunDir.y * 220, car.z + sunDir.z * 220); sun.target.position.set(car.x, gy, car.z);
     weatherUpdate(dt, now);
     // keep the frame rate up on slower graphics cards by trading away some sharpness
-    fpsT += dt; fpsN++; if (fpsT > 2) { var fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
-      if (fps < 40 && pr > 0.65) { pr = Math.max(0.65, pr * 0.85); renderer.setPixelRatio(pr); resize(); } else if (fps > 57 && pr < prMax) { pr = Math.min(prMax, pr * 1.08); renderer.setPixelRatio(pr); resize(); } }
+    fpsT += dt; fpsN++; if (fpsT > 1.2) { var fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
+      if (fps < 40 && pr > prMin) { pr = Math.max(prMin, pr * (fps < 25 ? 0.72 : 0.86)); renderer.setPixelRatio(pr); resize(); }
+      else if (fps < 30 && nearR > 55) { nearR = 55; nearCap = 36; }   // still slow at the lowest resolution: fewer full-detail trees
+      else if (fps > 57 && pr < prMax) { pr = Math.min(prMax, pr * 1.06); renderer.setPixelRatio(pr); resize(); } }
     lodT += dt; if (lodT > 0.25 && forest && forest.lod) { lodT = 0; forest.lod(); }
 
     hudT += dt;
