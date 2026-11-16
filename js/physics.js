@@ -27,7 +27,7 @@
     var b = clamp(FxB, -maxB, maxB);
     var maxD = aids ? Math.sqrt(Math.max(room, 0.12 * D * D)) : 0.98 * D;   // traction control gives cornering priority
     var d = clamp(FxD, -maxD, maxD);
-    if (Math.abs(FxD) > maxD + 1) spin = 1;
+    if (!aids && Math.abs(FxD) > maxD + 1) spin = 1;   // wheels only light up with the aids off
     Fx = clamp(b + d, -0.99 * D, 0.99 * D);
     var left = Math.sqrt(Math.max(D * D - Fx * Fx, 0));
     if (Math.abs(Fy) > left) Fy = Fy > 0 ? left : -left;
