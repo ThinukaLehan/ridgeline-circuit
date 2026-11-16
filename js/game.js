@@ -30,13 +30,13 @@
 
   /* ---------- sky ---------- */
   var skyU = { sunDir: { value: new T.Vector3(0, 1, 0) }, sunCol: { value: new T.Vector3(1, 1, 1) }, sunStr: { value: 1 }, hor: { value: new T.Vector3() }, zen: { value: new T.Vector3() },
-    cloudAmt: { value: 0.25 }, cloudCol: { value: new T.Vector3(1, 1, 1) }, cloudDark: { value: new T.Vector3(0.6, 0.65, 0.72) }, stars: { value: 0 } };
+    cloudAmt: { value: 0.25 }, cloudCol: { value: new T.Vector3(1, 1, 1) }, cloudDark: { value: new T.Vector3(0.6, 0.65, 0.72) }, stars: { value: 0 }, map: { value: null }, useMap: { value: 0 }, mapExp: { value: 1 } };
   var skyMat = new T.ShaderMaterial({
     side: T.BackSide, depthWrite: false, fog: false, uniforms: skyU,
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader: [
       'varying vec3 vDir; uniform vec3 sunDir; uniform vec3 sunCol; uniform float sunStr; uniform vec3 hor; uniform vec3 zen;',
-      'uniform float cloudAmt; uniform vec3 cloudCol; uniform vec3 cloudDark; uniform float stars;',
+      'uniform float cloudAmt; uniform vec3 cloudCol; uniform vec3 cloudDark; uniform float stars; uniform sampler2D map; uniform float useMap; uniform float mapExp;',
       'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }',
       'float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);',
       '  return mix(mix(hash(i),hash(i+vec2(1.0,0.0)),f.x), mix(hash(i+vec2(0.0,1.0)),hash(i+vec2(1.0,1.0)),f.x), f.y); }',
@@ -45,6 +45,10 @@
       '  vec3 d = normalize(vDir);',
       '  float h = clamp(d.y,0.0,1.0);',
       '  vec3 c = mix(hor, zen, pow(h,0.5));',
+      '  if(useMap>0.5){',
+      '    vec2 e = vec2(atan(d.z,d.x)*0.15915494+0.5, asin(clamp(d.y,-1.0,1.0))*0.31830989+0.5);',
+      '    c = mix(hor, texture2D(map,e).rgb*mapExp, smoothstep(0.02,0.15,d.y));',
+      '  } else {',
       '  float s = max(dot(d,sunDir),0.0);',
       '  c += sunCol*pow(s,7.0)*0.25*sunStr;',
       '  c += sunCol*pow(s,1100.0)*6.0*sunStr;',
@@ -56,6 +60,7 @@
       '    float cl = smoothstep(lo,lo+0.26,n)*smoothstep(0.0,0.2,d.y);',
       '    vec3 cc = mix(cloudDark, cloudCol, smoothstep(lo,lo+0.42,n));',
       '    c = mix(c, cc, cl*0.94);',
+      '  }',
       '  }',
       '  gl_FragColor = vec4(c,1.0);',
       '  #include <tonemapping_fragment>',
@@ -73,7 +78,7 @@
   var sc = sun.shadow.camera; sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70; sc.near = 1; sc.far = 460;
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03; scene.add(sun); scene.add(sun.target);
   var sunDir = new T.Vector3(0.5, 0.6, 0.4).normalize();
-  var beams = [0, 1].map(function () { var s = new T.SpotLight(0xfff2d8, 0, 150, 0.5, 0.55, 1.1); s.castShadow = false; return s; });
+  var beams = [0, 1].map(function () { var s = new T.SpotLight(0xfff2d8, 0, 170, 0.62, 0.6, 1.0); s.castShadow = false; return s; });
 
   /* ---------- textures drawn in code ---------- */
   var maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -113,6 +118,15 @@
   var puddleTex = canvasTex(256, 256, function (g, w, h) {
     g.fillStyle = 'rgb(0,60,0)'; g.fillRect(0, 0, w, h); blotch(g, w, h, 26, ['rgb(0,14,0)', 'rgb(0,24,0)'], 0.55); speckle(g, w, h, 5000, ['rgb(0,90,0)', 'rgb(0,40,0)'], 0.3, 0.6, 2);
   }, true);
+  var roadNrm = (function () {
+    var W = 512, H = 1024, h = new Float32Array(W * H), i, x, y; for (i = 0; i < W * H; i++) h[i] = rnd() * 0.7 + rnd() * 0.3;
+    var c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d'), im = g.createImageData(W, H), d = im.data;
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+      var dx = h[y * W + (x + 1) % W] - h[y * W + (x + W - 1) % W], dy = h[((y + 1) % H) * W + x] - h[((y + H - 1) % H) * W + x], nx = -dx * 1.4, ny = -dy * 1.4, l = 1 / Math.sqrt(nx * nx + ny * ny + 1), o = (y * W + x) * 4;
+      d[o] = (nx * l * 0.5 + 0.5) * 255; d[o + 1] = (ny * l * 0.5 + 0.5) * 255; d[o + 2] = (l * 0.5 + 0.5) * 255; d[o + 3] = 255;
+    }
+    g.putImageData(im, 0, 0); var t = new T.CanvasTexture(c); t.wrapS = t.wrapT = T.RepeatWrapping; t.anisotropy = maxAniso; return t;
+  })();
   var checkTex = canvasTex(256, 32, function (g) { for (var x = 0; x < 16; x++) for (var y = 0; y < 2; y++) { g.fillStyle = ((x + y) % 2) ? '#111' : '#f2f2f2'; g.fillRect(x * 16, y * 16, 16, 16); } });
   var puffTex = canvasTex(64, 64, function (g) { var gr = g.createRadialGradient(32, 32, 2, 32, 32, 31); gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
 
@@ -134,10 +148,10 @@
   }
   function roadM(o) { o.side = T.DoubleSide; o.polygonOffset = true; o.polygonOffsetFactor = -2; o.polygonOffsetUnits = -2; return new T.MeshStandardMaterial(o); }
   var roadMats = {
-    dry: roadM({ map: roadTex, roughness: 0.82, envMapIntensity: 0.5 }),
-    wet: roadM({ map: roadTex, color: col(0x8f9499), roughness: 1, roughnessMap: puddleTex, envMapIntensity: 1.5 }),
+    dry: roadM({ map: roadTex, roughness: 0.8, envMapIntensity: 0.55, normalMap: roadNrm, normalScale: new T.Vector2(0.25, 0.25) }),
+    wet: roadM({ map: roadTex, color: col(0x8f9499), roughness: 1, roughnessMap: puddleTex, envMapIntensity: 1.5, normalMap: roadNrm, normalScale: new T.Vector2(0.15, 0.15) }),
     gravel: roadM({ map: gravelTex, roughness: 1, envMapIntensity: 0.3 }),
-    snow: roadM({ map: snowRoadTex, roughness: 0.85, envMapIntensity: 0.5 })
+    snow: roadM({ map: snowRoadTex, color: col(0xdde2e8), roughness: 0.85, envMapIntensity: 0.5 })
   };
   puddleTex.repeat.set(1, 1);
   var shoulderMat = new T.MeshStandardMaterial({ color: col(0x8b8068), roughness: 1, side: T.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, envMapIntensity: 0.3 });
@@ -148,15 +162,16 @@
   var GS = 3200, GN = 256, gH = new Float32Array((GN + 1) * (GN + 1)), coarse = [];
   for (i = 0; i < N; i += 6) coarse.push(P[i].x, P[i].z);
   (function () {
-    var pos = [], uv = [], idx = [], ix, iz;
+    var pos = [], uv = [], idx = [], gcol = [], ix, iz;
     for (iz = 0; iz <= GN; iz++) for (ix = 0; ix <= GN; ix++) {
       var x = -GS / 2 + ix * GS / GN, z = -GS / 2 + iz * GS / GN, d2 = 1e18;
       for (var k = 0; k < coarse.length; k += 2) { var dx = coarse[k] - x, dz = coarse[k + 1] - z, d = dx * dx + dz * dz; if (d < d2) d2 = d; }
       var h = 46 * Math.pow(fbm(x * 0.0021 + 3, z * 0.0021 + 7), 1.4) * sstep(26, 300, Math.sqrt(d2)) * (1 - sstep(1250, 1600, Math.max(Math.abs(x), Math.abs(z))));
-      gH[iz * (GN + 1) + ix] = h; pos.push(x, h, z); uv.push(x / 14, z / 14);
+      gH[iz * (GN + 1) + ix] = h; pos.push(x, h, z); uv.push(x / 9, z / 9);
+      var gv = 0.72 + 0.6 * fbm(x * 0.006 + 11, z * 0.006 + 5), gy2 = fbm(x * 0.017 + 40, z * 0.017 + 3); gcol.push(gv * (1 + 0.14 * gy2), gv * (1 + 0.1 * gy2), gv * (1 - 0.2 * gy2));
     }
     for (iz = 0; iz < GN; iz++) for (ix = 0; ix < GN; ix++) { var a = iz * (GN + 1) + ix, b = a + 1, c = a + GN + 1, d3 = c + 1; idx.push(a, c, b, b, c, d3); }
-    var g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    var g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2)); g.setAttribute('color', new T.Float32BufferAttribute(gcol, 3)); g.setIndex(idx); g.computeVertexNormals();
     RC._groundGeo = g;
   })();
   function groundH(x, z) {
@@ -164,7 +179,7 @@
     var ix = Math.floor(fx), iz = Math.floor(fz), tx = fx - ix, tz = fz - iz, a = iz * (GN + 1) + ix;
     return (gH[a] * (1 - tx) + gH[a + 1] * tx) * (1 - tz) + (gH[a + GN + 1] * (1 - tx) + gH[a + GN + 2] * tx) * tz;
   }
-  var groundMat = new T.MeshStandardMaterial({ map: grassTex, roughness: 1, envMapIntensity: 0.3 });
+  var groundMat = new T.MeshStandardMaterial({ map: grassTex, roughness: 1, envMapIntensity: 0.3, vertexColors: true }), grassGain = 1, dirtTex = null, dirtNrm = null;
   var ground = new T.Mesh(RC._groundGeo, groundMat); ground.receiveShadow = true; scene.add(ground);
   var farTexG = grassTex.clone(); farTexG.needsUpdate = true; farTexG.repeat.set(900, 900);
   var farTexS = snowTex.clone(); farTexS.needsUpdate = true; farTexS.repeat.set(900, 900);
@@ -189,30 +204,75 @@
   })();
 
   /* ---------- forest ---------- */
-  var treeGrid = {}, CELL = 16, foliage = [], treeBase = [], treeN = 0;
+  var treeGrid = {}, CELL = 16, trees = [], forest = null;
   function nearTrack(x, z, min) { var m2 = min * min; for (var i = 0; i < coarse.length; i += 2) { var dx = coarse[i] - x, dz = coarse[i + 1] - z; if (dx * dx + dz * dz < m2) return true; } return false; }
   (function () {
-    var list = [], k, x, z;
+    var k, x, z;
+    function add(x, z) { var sc = 0.7 + rnd() * 0.65; trees.push({ x: x, z: z, y: groundH(x, z) - 0.25, s: sc, rot: rnd() * 6.283, v: (rnd() * 3) | 0, near: false, bi: 0, m: new T.Matrix4() });
+      var key = Math.floor(x / CELL) + ',' + Math.floor(z / CELL); (treeGrid[key] || (treeGrid[key] = [])).push([x, z, 0.3 * sc]); }
     for (k = 0; k < 1700; k++) { var i = (rnd() * N) | 0, off = (rnd() < 0.5 ? -1 : 1) * (15 + Math.pow(rnd(), 1.6) * 160);
-      x = P[i].x + SD[i].x * off + (rnd() - 0.5) * 6; z = P[i].z + SD[i].z * off + (rnd() - 0.5) * 6; if (!nearTrack(x, z, 14.5)) list.push([x, z]); }
-    for (k = 0; k < 2300; k++) { x = (rnd() - 0.5) * 2900; z = (rnd() - 0.5) * 2900; if (!nearTrack(x, z, 15) && fbm(x * 0.004, z * 0.004) > 0.42) list.push([x, z]); }
-    var n = treeN = list.length;
-    var trunk = new T.InstancedMesh(new T.CylinderGeometry(0.14, 0.3, 3.0, 6).translate(0, 1.5, 0), new T.MeshStandardMaterial({ color: col(0x4a3524), roughness: 1 }), n);
-    var fMat = new T.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, envMapIntensity: 0.25 });
-    var tiers = [[2.3, 4.2, 3.9], [1.9, 3.7, 5.9], [1.45, 3.3, 7.8], [0.95, 3.0, 9.6]].map(function (t) { return new T.InstancedMesh(new T.ConeGeometry(t[0], t[1], 10).translate(0, t[2], 0), fMat, n); });
-    var greens = [0x24471f, 0x2d5526, 0x1f3d1c, 0x35602a, 0x2a4d2b];
-    for (k = 0; k < n; k++) {
-      var s = 0.75 + rnd() * 0.95;
-      dummy.position.set(list[k][0], groundH(list[k][0], list[k][1]) - 0.15, list[k][1]); dummy.rotation.set((rnd() - 0.5) * 0.06, rnd() * 6.283, (rnd() - 0.5) * 0.06); dummy.scale.set(s, s * (0.9 + rnd() * 0.35), s); dummy.updateMatrix();
-      trunk.setMatrixAt(k, dummy.matrix); tiers.forEach(function (m) { m.setMatrixAt(k, dummy.matrix); });
-      treeBase.push(col(greens[(rnd() * greens.length) | 0]));
-      var key = Math.floor(list[k][0] / CELL) + ',' + Math.floor(list[k][1] / CELL);
-      (treeGrid[key] || (treeGrid[key] = [])).push([list[k][0], list[k][1], 0.3 * s]);
-    }
-    foliage = tiers; [trunk].concat(tiers).forEach(function (m) { m.castShadow = true; m.frustumCulled = false; scene.add(m); });
+      x = P[i].x + SD[i].x * off + (rnd() - 0.5) * 6; z = P[i].z + SD[i].z * off + (rnd() - 0.5) * 6; if (!nearTrack(x, z, 15.5)) add(x, z); }
+    for (k = 0; k < 2300; k++) { x = (rnd() - 0.5) * 2900; z = (rnd() - 0.5) * 2900; if (!nearTrack(x, z, 16) && fbm(x * 0.004, z * 0.004) > 0.42) add(x, z); }
+    trees.forEach(function (t) { dummy.position.set(t.x, t.y, t.z); dummy.rotation.set(0, t.rot, 0); dummy.scale.set(t.s, t.s, t.s); dummy.updateMatrix(); t.m.copy(dummy.matrix); });
   })();
-  function tintTrees(toWhite, dark) { var c = new T.Color(), w = new T.Color(0.85, 0.88, 0.92);
-    foliage.forEach(function (m, ti) { for (var k = 0; k < treeN; k++) { c.copy(treeBase[k]).multiplyScalar(dark).lerp(w, toWhite * (0.45 + 0.12 * ti)); m.setColorAt(k, c); } m.instanceColor.needsUpdate = true; }); }
+  // simple stand-in trees, used only if the real tree files cannot be loaded
+  function buildCones() {
+    if (forest) return; var n = trees.length, fMat = new T.MeshStandardMaterial({ color: col(0x2a4d2b), roughness: 0.95, envMapIntensity: 0.25 }), base = col(0x2a4d2b);
+    var parts = [new T.InstancedMesh(new T.CylinderGeometry(0.14, 0.3, 3.0, 6).translate(0, 1.5, 0), new T.MeshStandardMaterial({ color: col(0x4a3524), roughness: 1 }), n)]
+      .concat([[2.3, 4.2, 3.9], [1.9, 3.7, 5.9], [1.45, 3.3, 7.8], [0.95, 3.0, 9.6]].map(function (t) { return new T.InstancedMesh(new T.ConeGeometry(t[0], t[1], 10).translate(0, t[2], 0), fMat, n); }));
+    parts.forEach(function (m) { trees.forEach(function (t, k) { m.setMatrixAt(k, t.m); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); });
+    forest = { tint: function (w, d) { fMat.color.copy(base).multiplyScalar(d).lerp(new T.Color(0.85, 0.88, 0.92), w * 0.55); }, lod: null };
+  }
+  // real trees: generated pine meshes with bark and needle textures; distant ones are drawn as flat cut-outs
+  function buildPines(A) {
+    if (forest) return;
+    function parse(buf) {
+      var h = new Uint32Array(buf, 0, 4), o = 16;
+      function f32(n) { var a = new Float32Array(buf, o, n); o += n * 4; return a; } function u32(n) { var a = new Uint32Array(buf, o, n); o += n * 4; return a; }
+      function geo(nv, ni) { var g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(f32(nv * 3), 3)); g.setAttribute('normal', new T.BufferAttribute(f32(nv * 3), 3)); g.setAttribute('uv', new T.BufferAttribute(f32(nv * 2), 2)); g.setIndex(new T.BufferAttribute(u32(ni), 1)); return g; }
+      var r = {}; r.b = geo(h[0], h[1]); r.l = geo(h[2], h[3]); return r;
+    }
+    A.bark.wrapS = A.bark.wrapT = A.barkN.wrapS = A.barkN.wrapT = T.RepeatWrapping; A.bark.encoding = T.sRGBEncoding; A.leaf.encoding = T.sRGBEncoding; A.leaf.anisotropy = 4;
+    var barkMat = new T.MeshStandardMaterial({ map: A.bark, normalMap: A.barkN, roughness: 0.95, envMapIntensity: 0.3 });
+    var leafMat = new T.MeshStandardMaterial({ map: A.leaf, alphaTest: 0.4, side: T.DoubleSide, roughness: 0.85, envMapIntensity: 0.3 });
+    var leafDepth = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, map: A.leaf, alphaTest: 0.4 });
+    var CAP = 150, ZERO = new T.Matrix4().makeScale(0, 0, 0), sets = [], billMats = [];
+    var keepTM = renderer.toneMapping, keepCol = new T.Color(); renderer.getClearColor(keepCol); var keepA = renderer.getClearAlpha(); renderer.toneMapping = T.NoToneMapping;
+    A.bins.forEach(function (buf, v) {
+      var g = parse(buf); g.l.computeBoundingBox(); var bb = g.l.boundingBox, R = Math.max(bb.max.x, -bb.min.x, bb.max.z, -bb.min.z), H = bb.max.y;
+      // bake a cut-out picture of this tree for distant copies
+      var rt = new T.WebGLRenderTarget(256, 512), sc2 = new T.Scene(), dl = new T.DirectionalLight(0xffffff, 0.9); dl.position.set(0.5, 1, 0.8); sc2.add(new T.AmbientLight(0xffffff, 0.95)); sc2.add(dl);
+      sc2.add(new T.Mesh(g.b, barkMat)); sc2.add(new T.Mesh(g.l, leafMat));
+      var cam = new T.OrthographicCamera(-R, R, H, 0, 0.1, 200); cam.position.set(0, 0, 80);
+      renderer.setRenderTarget(rt); renderer.setClearColor(0x1c2a16, 0); renderer.clear(); renderer.render(sc2, cam); renderer.setRenderTarget(null);
+      var bg = new T.BufferGeometry();
+      bg.setAttribute('position', new T.Float32BufferAttribute([-R, 0, 0, R, 0, 0, R, H, 0, -R, H, 0, 0, 0, -R, 0, 0, R, 0, H, R, 0, H, -R], 3));
+      bg.setAttribute('uv', new T.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1], 2));
+      bg.setAttribute('normal', new T.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3)); bg.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+      var bm = new T.MeshStandardMaterial({ map: rt.texture, alphaTest: 0.5, side: T.DoubleSide, roughness: 1, envMapIntensity: 0.3 }); billMats.push(bm);
+      var mine = trees.filter(function (t) { return t.v === v; });
+      var bill = new T.InstancedMesh(bg, bm, mine.length); mine.forEach(function (t, k) { t.bi = k; bill.setMatrixAt(k, t.m); }); bill.frustumCulled = false; scene.add(bill);
+      var nb = new T.InstancedMesh(g.b, barkMat, CAP), nl = new T.InstancedMesh(g.l, leafMat, CAP); nb.count = nl.count = 0;
+      nb.castShadow = nl.castShadow = true; nb.receiveShadow = true; nl.customDepthMaterial = leafDepth; nb.frustumCulled = nl.frustumCulled = false; scene.add(nb); scene.add(nl);
+      sets.push({ list: mine, bill: bill, nb: nb, nl: nl });
+    });
+    renderer.toneMapping = keepTM; renderer.setClearColor(keepCol, keepA);
+    var white = new T.Color(1.7, 1.8, 1.95);   // above 1 on purpose: frosts the needles under snow light
+    forest = {
+      tint: function (w, d) { leafMat.color.setScalar(d).lerp(white, w * 0.5); barkMat.color.setScalar(d).lerp(white, w * 0.2); billMats.forEach(function (m) { m.color.setScalar(d * 1.05).lerp(white, w * 0.5); }); },
+      lod: function () {
+        var cx = camera.position.x, cz = camera.position.z;
+        sets.forEach(function (S) {
+          var k = 0, ch = false;
+          for (var i = 0; i < S.list.length; i++) { var t = S.list[i], dx = t.x - cx, dz = t.z - cz, d2 = dx * dx + dz * dz, want = d2 < (t.near ? 30625 : 22500) && k < CAP;
+            if (want) { S.nb.setMatrixAt(k, t.m); S.nl.setMatrixAt(k, t.m); k++; }
+            if (want !== t.near) { S.bill.setMatrixAt(t.bi, want ? ZERO : t.m); t.near = want; ch = true; } }
+          S.nb.count = S.nl.count = k; S.nb.instanceMatrix.needsUpdate = S.nl.instanceMatrix.needsUpdate = true; if (ch) S.bill.instanceMatrix.needsUpdate = true;
+        });
+      }
+    };
+  }
+  function tintTrees(toWhite, dark) { if (forest) forest.tint(toWhite, dark); }
 
   /* ---------- mountain range ---------- */
   var mtnMat = new T.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: T.DoubleSide, envMapIntensity: 0.2 });
@@ -265,10 +325,14 @@
 
   /* ---------- conditions ---------- */
   var TIME = {
-    day: { sun: [0.55, 0.62, 0.38], sunCol: 0xfff0d6, sunInt: 2.6, hemi: 0.45, zen: [0.045, 0.17, 0.50], hor: [0.50, 0.64, 0.80], exp: 0.9, stars: 0, bright: 1, lamps: false },
-    dusk: { sun: [0.86, 0.13, 0.34], sunCol: 0xffa25e, sunInt: 2.0, hemi: 0.3, zen: [0.05, 0.09, 0.27], hor: [0.80, 0.40, 0.20], exp: 1.0, stars: 0, bright: 0.45, lamps: true },
-    night: { sun: [-0.4, 0.62, 0.3], sunCol: 0x9fb4ff, sunInt: 0.32, hemi: 0.13, zen: [0.003, 0.006, 0.02], hor: [0.012, 0.02, 0.04], exp: 1.15, stars: 1, bright: 0.05, lamps: true }
+    day: { sun: [0.55, 0.62, 0.38], sunCol: 0xfff0d6, sunInt: 2.6, hemi: 0.45, zen: [0.045, 0.17, 0.50], hor: [0.50, 0.64, 0.80], exp: 0.9, stars: 0, bright: 1, lamps: false,
+      hSun: [0.753, 0.375, 0.540], hExp: 1.0, hHor: [0.43, 0.59, 0.80], hZen: [0.065, 0.104, 0.227], hHemi: 0.36, hSunInt: 2.6 },
+    dusk: { sun: [0.86, 0.13, 0.34], sunCol: 0xffa25e, sunInt: 2.0, hemi: 0.3, zen: [0.05, 0.09, 0.27], hor: [0.80, 0.40, 0.20], exp: 1.0, stars: 0, bright: 0.45, lamps: true,
+      hSun: [0.656, 0.122, 0.745], hExp: 0.42, hHor: [0.45, 0.38, 0.72], hZen: [0.16, 0.19, 0.49], hHemi: 0.3, hSunInt: 1.5, hSunCol: 0xffb9a0 },
+    night: { sun: [-0.4, 0.62, 0.3], sunCol: 0x9fb4ff, sunInt: 0.32, hemi: 0.13, zen: [0.003, 0.006, 0.02], hor: [0.012, 0.02, 0.04], exp: 1.15, stars: 1, bright: 0.05, lamps: true,
+      hSun: [0.0, 0.643, -0.766], hExp: 0.16, hHor: [0.039, 0.032, 0.025], hZen: [0.006, 0.007, 0.008], hHemi: 0.1, hSunInt: 0.3 }
   };
+  var hdr = {};
   var state = { car: 0, color: 0, surf: 0, time: 0, aids: true };
   try { var sv = JSON.parse(localStorage.getItem('ridgeline-setup') || 'null'); if (sv) { state.car = clamp(sv.car | 0, 0, RC.CARS.length - 1); state.color = clamp(sv.color | 0, 0, 4); state.surf = clamp(sv.surf | 0, 0, 3); state.time = clamp(sv.time | 0, 0, 2); state.aids = sv.aids !== false; } } catch (e) {}
   function save() { try { localStorage.setItem('ridgeline-setup', JSON.stringify(state)); } catch (e) {} }
@@ -276,25 +340,28 @@
   function mix3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
   function applyConditions() {
     surf = RC.SURFACES[state.surf]; var t = TIME[RC.TIMES[state.time].id];
-    var cloud = surf.loose ? 0.32 : 0.25, sunMul = 1, grey = 0, fogN = 220, fogF = 3200, gc = [0.36, 0.39, 0.44], b = Math.max(t.bright, 0.05);
+    var cloud = surf.loose ? 0.32 : 0.25, sunMul = 1, grey = 0, fogN = 300, fogF = 6500, gc = [0.36, 0.39, 0.44], b = Math.max(t.bright, 0.05);
     if (surf.rain) { cloud = 1; sunMul = 0.28; grey = 0.82; fogN = 45; fogF = 850; }
     if (surf.snow) { cloud = 0.93; sunMul = 0.5; grey = 0.82; fogN = 60; fogF = 1000; gc = [0.66, 0.7, 0.76]; }
-    var g2 = [gc[0] * b, gc[1] * b, gc[2] * b], hor = mix3(t.hor, g2, grey), zen = mix3(t.zen, [g2[0] * 0.75, g2[1] * 0.75, g2[2] * 0.8], grey);
+    var tid = RC.TIMES[state.time].id, photo = (!grey && hdr[tid]) ? hdr[tid] : null;
+    var g2 = [gc[0] * b, gc[1] * b, gc[2] * b], hor = photo ? t.hHor : mix3(t.hor, g2, grey), zen = photo ? t.hZen : mix3(t.zen, [g2[0] * 0.75, g2[1] * 0.75, g2[2] * 0.8], grey);
+    skyU.useMap.value = photo ? 1 : 0; skyU.map.value = photo; skyU.mapExp.value = t.hExp;
     skyU.hor.value.set(hor[0], hor[1], hor[2]); skyU.zen.value.set(zen[0], zen[1], zen[2]);
-    sunDir.set(t.sun[0], t.sun[1], t.sun[2]).normalize(); skyU.sunDir.value.copy(sunDir);
-    var sc2 = col(t.sunCol); skyU.sunCol.value.set(sc2.r, sc2.g, sc2.b); skyU.sunStr.value = (t.stars ? 0.5 : 1) * (grey ? 0.15 : 1);
+    var sd = photo ? t.hSun : t.sun; sunDir.set(sd[0], sd[1], sd[2]).normalize(); skyU.sunDir.value.copy(sunDir);
+    var sc2 = col(photo && t.hSunCol ? t.hSunCol : t.sunCol); skyU.sunCol.value.set(sc2.r, sc2.g, sc2.b); skyU.sunStr.value = (t.stars ? 0.5 : 1) * (grey ? 0.15 : 1);
     skyU.cloudAmt.value = cloud; skyU.stars.value = grey ? 0 : t.stars;
     var cb = grey ? b * 0.75 : b, warm = RC.TIMES[state.time].id === 'dusk' && !grey;
     skyU.cloudCol.value.set(cb * (warm ? 1.25 : 1), cb * (warm ? 0.72 : 1), cb * (warm ? 0.55 : 1));
     skyU.cloudDark.value.set(hor[0] * 0.55 + cb * 0.12, hor[1] * 0.55 + cb * 0.13, hor[2] * 0.55 + cb * 0.16);
     scene.fog.color.setRGB(hor[0], hor[1], hor[2]); scene.fog.near = fogN; scene.fog.far = fogF;
-    sun.color.copy(sc2); sun.intensity = t.sunInt * sunMul;
-    hemi.color.setRGB(Math.min(1, zen[0] * 2 + hor[0]), Math.min(1, zen[1] * 2 + hor[1]), Math.min(1, zen[2] * 1.4 + hor[2])); hemi.groundColor.copy(col(surf.snow ? 0xb8c0c8 : 0x56683a)); hemi.intensity = t.hemi * (grey ? 1.5 : 1) + (surf.snow ? 0.12 : 0);
+    sun.color.copy(sc2); sun.intensity = (photo ? t.hSunInt : t.sunInt) * sunMul;
+    hemi.color.setRGB(Math.min(1, zen[0] * 2 + hor[0]), Math.min(1, zen[1] * 2 + hor[1]), Math.min(1, zen[2] * 1.4 + hor[2])); hemi.groundColor.copy(col(surf.snow ? 0xb8c0c8 : 0x56683a)); hemi.intensity = (photo ? t.hHemi : t.hemi) * (grey ? 1.5 : 1) + (surf.snow ? 0.12 : 0);
     renderer.toneMappingExposure = t.exp;
     roadMesh.material = roadMats[surf.id];
-    shoulderMat.color.copy(col(surf.snow ? 0xdfe5ea : (surf.rain ? 0x5f5848 : 0x8b8068)));
-    groundMat.map = surf.snow ? snowTex : grassTex; groundMat.color.setScalar(surf.rain ? 0.6 : 1); groundMat.roughness = surf.rain ? 0.75 : 1; groundMat.needsUpdate = true;
-    farMat.map = surf.snow ? farTexS : farTexG; farMat.color.setScalar(surf.rain ? 0.6 : 1); farMat.needsUpdate = true;
+    if (dirtTex) { shoulderMat.map = surf.snow ? null : dirtTex; shoulderMat.normalMap = surf.snow ? null : dirtNrm; shoulderMat.needsUpdate = true; }
+    if (dirtTex && !surf.snow) shoulderMat.color.setRGB(surf.rain ? 0.75 : 1.5, surf.rain ? 0.73 : 1.45, surf.rain ? 0.7 : 1.35); else shoulderMat.color.copy(col(surf.snow ? 0xdfe5ea : (surf.rain ? 0x5f5848 : 0x8b8068)));
+    groundMat.map = surf.snow ? snowTex : grassTex; groundMat.color.setScalar(surf.snow ? 1 : (surf.rain ? 0.6 : 1) * grassGain); groundMat.roughness = surf.rain ? 0.75 : 1; groundMat.needsUpdate = true;
+    farMat.map = surf.snow ? farTexS : farTexG; farMat.color.setScalar(surf.snow ? 1 : (surf.rain ? 0.6 : 1) * grassGain); farMat.needsUpdate = true;
     mtnMat.color.setScalar(surf.snow ? 1.6 : 1);
     envGround.material.color.copy(col(surf.snow ? 0xcfd6dd : 0x33471f)).multiplyScalar(b);
     tintTrees(surf.snow ? 1 : 0, surf.rain ? 0.7 : 1);
@@ -316,7 +383,7 @@
     state.car = (n + RC.CARS.length) % RC.CARS.length; spec = RC.CARS[state.car]; if (state.color >= spec.colors.length) state.color = 0;
     if (model) { scene.remove(model.group); model.dispose(); }
     model = RC.buildCar(spec, spec.colors[state.color]); scene.add(model.group);
-    beams.forEach(function (b, k) { var sx = k ? -1 : 1; b.position.set(sx * model.lampX, model.lampY, model.lampZ); b.target.position.set(sx * model.lampX * 0.6, -1.2, model.lampZ + 22); model.group.add(b); model.group.add(b.target); });
+    beams.forEach(function (b, k) { var sx = k ? -1 : 1; b.position.set(sx * model.lampX, model.lampY, model.lampZ); b.target.position.set(sx * model.lampX * 0.6, -1.7, model.lampZ + 15); model.group.add(b); model.group.add(b.target); });
     var aids = car.aids; car = RC.physNew(spec); car.aids = state.aids; placeAt(START); updateLamps(); RC.audio.setCar(spec); loadBest(); menuFill(); save();
   }
 
@@ -404,7 +471,7 @@
   function resize() { var w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix(); }
   window.addEventListener('resize', resize); resize();
   var elSpeed = $('speed'), elGear = $('gear'), elArc = $('rpmArc'), elNow = $('tNow'), elLast = $('tLast'), elBest = $('tBest');
-  var inp = { thr: 0, brk: 0, steer: 0, hb: false }, env = { mu: 1, B: 11, rr: 0.013 }, last = performance.now(), hudT = 0, orbit = 0.9, emitT = 0, roll = 0, pitch = 0;
+  var inp = { thr: 0, brk: 0, steer: 0, hb: false }, env = { mu: 1, B: 11, rr: 0.013 }, last = performance.now(), hudT = 0, lodT = 1, orbit = 0.9, emitT = 0, roll = 0, pitch = 0;
   function collide() {
     var sh = Math.sin(car.h), ch = Math.cos(car.h), wx = sh * car.vx + ch * car.vy, wz = ch * car.vx - sh * car.vy, hit = false;
     var cx = Math.floor(car.x / CELL), cz = Math.floor(car.z / CELL);
@@ -468,6 +535,7 @@
     sky.position.copy(camera.position);
     sun.position.set(car.x + sunDir.x * 220, gy + sunDir.y * 220, car.z + sunDir.z * 220); sun.target.position.set(car.x, gy, car.z);
     weatherUpdate(dt, now);
+    lodT += dt; if (lodT > 0.25 && forest && forest.lod) { lodT = 0; forest.lod(); }
 
     hudT += dt;
     if (hudT > 0.05) { hudT = 0;
@@ -483,6 +551,25 @@
     RC.audio.update({ rpm: car.rpm, thr: mode === 'drive' ? car.load : 0, speed: mode === 'drive' ? speed : 0, slide: mode === 'drive' ? Math.max(car.slide, car.spin ? 0.6 : 0) : 0, surface: surf.id, rain: !!surf.rain, onRoad: onRoad, active: mode === 'drive' });
     renderer.render(scene, camera);
   }
+  /* ---------- real-world assets (photographed skies and textures, tree meshes) ---------- */
+  (function () {
+    var tl = new T.TextureLoader(), base = 'assets/';
+    function rep(t, x, y) { t.wrapS = t.wrapT = T.RepeatWrapping; t.anisotropy = maxAniso; if (x) t.repeat.set(x, y); return t; }
+    if (T.RGBELoader) [['day', 'sky_day.hdr'], ['dusk', 'sky_dusk.hdr'], ['night', 'sky_night.hdr']].forEach(function (e) {
+      try { new T.RGBELoader().setDataType(T.HalfFloatType).load(base + e[1], function (tex) {
+        tex.wrapS = T.RepeatWrapping; tex.minFilter = tex.magFilter = T.LinearFilter; tex.generateMipmaps = false; tex.needsUpdate = true; hdr[e[0]] = tex; applyConditions();
+      }, undefined, function () {}); } catch (err) {}
+    });
+    tl.load(base + 'grass.jpg', function (t) { t.encoding = T.sRGBEncoding; grassTex = rep(t); farTexG = rep(t.clone(), 1700, 1700); farTexG.needsUpdate = true; grassGain = 1.35; applyConditions(); }, undefined, function () {});
+    tl.load(base + 'dirt.jpg', function (t) { t.encoding = T.sRGBEncoding; tl.load(base + 'dirt_n.jpg', function (n) { dirtTex = rep(t, 5, 0.3); dirtNrm = rep(n, 5, 0.3); applyConditions(); }, undefined, function () {}); }, undefined, function () {});
+    var A = { bins: [] }, left = 6, failed = false;
+    function done() { if (failed) return; if (--left === 0) { try { buildPines(A); } catch (err) { forest = null; buildCones(); } applyConditions(); } }
+    function fail() { if (!failed) { failed = true; buildCones(); applyConditions(); } }
+    [0, 1, 2].forEach(function (k) { new T.FileLoader().setResponseType('arraybuffer').load(base + 'pine' + k + '.bin', function (b) { A.bins[k] = b; done(); }, undefined, fail); });
+    tl.load(base + 'bark.jpg', function (t) { A.bark = t; done(); }, undefined, fail);
+    tl.load(base + 'bark_n.jpg', function (t) { A.barkN = t; done(); }, undefined, fail);
+    tl.load(base + 'pine_leaf.png', function (t) { A.leaf = t; done(); }, undefined, fail);
+  })();
   applyConditions(); setCar(state.car);
   requestAnimationFrame(frame);
   window.__game = { get car() { return car; }, input: input, lap: lap, state: state, setCar: setCar, apply: applyConditions, toDrive: toDrive };

@@ -14,6 +14,12 @@ Pick one of six cars, a road surface and a time of day, then drive a 3.1 km road
 - **Driving model:** two-axle model with slip-angle tyres, a friction circle, load transfer, aero drag and downforce, torque curves and stepped gearboxes. Traction and stability control can be switched off.
 - **Sound:** the engine is synthesised from one exhaust pulse per cylinder firing, timed by each engine's firing order, then passed through pipe resonances and a muffler filter. Tyre roar, wind, squeal and rain are layered on top.
 
+## Real-world assets
+
+- **Skies:** photographed HDR panoramas from Poly Haven (CC0): Rooitou Park, Kiara 1 Dawn and Dikhololo Night. They light the scene and give the cars their reflections.
+- **Trees:** pine meshes generated with [ez-tree](https://github.com/dgreenheck/ez-tree) (MIT), with its bark and needle textures. Distant trees are drawn as flat cut-outs of the same meshes.
+- **Ground:** photo grass and soil textures from the ez-tree demo (MIT).
+
 ## Controls
 
 | Key | Action |
@@ -36,6 +42,8 @@ On a phone, on-screen buttons appear instead.
 - `js/audio.js` – engine and road sound
 - `js/models.js` – car body and wheel builder
 - `js/game.js` – world, weather, cameras and the frame loop
+- `js/vendor/RGBELoader.js` – three.js HDR image loader (MIT)
+- `assets/` – skies, tree meshes and textures
 
 ## Run it locally
 
